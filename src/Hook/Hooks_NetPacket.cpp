@@ -229,6 +229,20 @@ namespace Hooks_NetPacket_UserStats {
             LOG_ACHIEVEMENT_WARN("Player::GetUserStats request: sha_schema is present, do not spoof");
             return false;
         }
+
+        // When -onlinefix is active, SpawnProcess rewrites the game's AppId to 480
+        // (Spacewar), so the achievement request arrives with appid=480 which is not
+        // in the user's addappid list.  Remap to the real game AppId so that the
+        // HasDepot check passes and the request is sent for the correct game.
+        if (appId == kOnlineFixAppId) {
+            AppId_t realAppId = Hooks_Misc::ResolveAppId();
+            if (realAppId && realAppId != kOnlineFixAppId) {
+                LOG_ACHIEVEMENT_INFO("Player::GetUserStats request: onlinefix 480 -> real appid {}", realAppId);
+                appId = realAppId;
+                req.set_appid(realAppId);
+            }
+        }
+
         if (!LuaConfig::HasDepot(appId)) {
             LOG_ACHIEVEMENT_WARN("Player::GetUserStats request: appid={} is not in addappid", appId);
             return false;
@@ -328,6 +342,20 @@ namespace Hooks_NetPacket_UserStats {
             return false;
         }
         AppId_t appId = static_cast<AppId_t>(req.game_id());
+
+        // When -onlinefix is active, SpawnProcess rewrites the game's AppId to 480
+        // (Spacewar), so the achievement request arrives with game_id=480 which is
+        // not in the user's addappid list.  Remap to the real game AppId so that the
+        // HasDepot check passes and the request is sent for the correct game.
+        if (appId == kOnlineFixAppId) {
+            AppId_t realAppId = Hooks_Misc::ResolveAppId();
+            if (realAppId && realAppId != kOnlineFixAppId) {
+                LOG_ACHIEVEMENT_INFO("ClientGetUserStats request: onlinefix 480 -> real appid {}", realAppId);
+                appId = realAppId;
+                req.set_game_id(realAppId);
+            }
+        }
+
         if (!LuaConfig::HasDepot(appId)) {
             LOG_ACHIEVEMENT_WARN("ClientGetUserStats request: appid={} is not in addappid", appId);
             return false;
@@ -358,7 +386,21 @@ namespace Hooks_NetPacket_UserStats {
         if (!resp.ParseFromArray(pBody, cbBody))
             return false;
         LOG_ACHIEVEMENT_DEBUG("ClientGetUserStats response: original body:\n{}", resp.DebugString());
-        if(!resp.has_game_id() || !LuaConfig::HasDepot(static_cast<AppId_t>(resp.game_id()))) {
+
+        AppId_t respAppId = static_cast<AppId_t>(resp.game_id());
+
+        // When -onlinefix is active the response carries game_id=480 because the
+        // request we sent had game_id=480 (or was remapped server-side back to 480).
+        // Remap here so HasDepot finds the real game and clears the stale stats.
+        if (respAppId == kOnlineFixAppId) {
+            AppId_t realAppId = Hooks_Misc::ResolveAppId();
+            if (realAppId && realAppId != kOnlineFixAppId) {
+                LOG_ACHIEVEMENT_INFO("ClientGetUserStats response: onlinefix 480 -> real appid {}", realAppId);
+                respAppId = realAppId;
+            }
+        }
+
+        if(!resp.has_game_id() || !LuaConfig::HasDepot(respAppId)) {
             LOG_ACHIEVEMENT_DEBUG("ClientGetUserStats response: no modification needed");
             return false;
         }
