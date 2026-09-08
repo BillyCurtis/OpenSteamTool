@@ -108,23 +108,13 @@ namespace {
     // Detect the first SteamNetworkingSockets call (interface 46) so GetAppID can
     // flip to 480 for P2P games. Skipped once already seen or when not in onlinefix.
     static void DetectNetworkingSockets(CUtlBuffer* pRead) {
-        if (!pRead) return;  // Add null check
-        
-        if (!Hooks_Misc::IsOnlineFixActive() || Hooks_Misc::ShouldReportOnlineFixAppId()) 
-            return;
-        
-        try {
-            IPCMessages::IPCRequest request{pRead};
-            if (!request.ok() || request.command() != EIPCCommand::InterfaceCall) return;
-            
-            IPCMessages::IPCInterfaceCall call{request.body()};
-            if (!call.ok()) return;
-            
-            if (call.interfaceID() == EIPCInterface::IClientNetworkingSocketsSerialized)
-                Hooks_Misc::NotifyNetworkingSocketsUsed();
-        } catch (...) {
-            // Log or handle deserialization failure
-        }
+        if (!Hooks_Misc::IsOnlineFixActive() || Hooks_Misc::ShouldReportOnlineFixAppId()) return;
+        IPCMessages::IPCRequest request{pRead};
+        if (!request.ok() || request.command() != EIPCCommand::InterfaceCall) return;
+        IPCMessages::IPCInterfaceCall call{request.body()};
+        if (!call.ok()) return;
+        if (call.interfaceID() == EIPCInterface::IClientNetworkingSocketsSerialized)
+            Hooks_Misc::NotifyNetworkingSocketsUsed();
     }
 
     HOOK_FUNC(IPCProcessMessage, bool,void* pServer, HSteamPipe hSteamPipe,
