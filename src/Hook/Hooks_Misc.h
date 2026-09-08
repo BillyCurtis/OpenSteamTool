@@ -29,7 +29,11 @@ namespace Hooks_Misc {
     // Uses CUtlBuffer::EnsureCapacity from steamclient, resolved on first call.
     bool EnsureBufferCapacity(CUtlBuffer* pWrite, uint32 newCapacity,bool updatePut = false);
 
-    // Resolve the real appid: if OnlineFix is active return real appid,
+    // Get the REAL appid: if OnlineFix is active return the true appid,
+    // otherwise fall back to GetAppIDForCurrentPipe().
+    AppId_t GetRealAppId();
+
+    // Get the app ID to report to the game: if OnlineFix is active return 480,
     // otherwise fall back to GetAppIDForCurrentPipe().
     AppId_t ResolveAppId();
 

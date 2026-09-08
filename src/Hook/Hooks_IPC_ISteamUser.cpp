@@ -13,7 +13,7 @@ namespace {
     // [Post-Handler]: IClientUser::GetSteamID
     void HandlerPost_IClientUser_GetSteamID(CPipeClient* pipe,CUtlBuffer* pRead, CUtlBuffer* pWrite)
     {
-        AppId_t appId = Hooks_Misc::ResolveAppId();
+        AppId_t appId = Hooks_Misc::GetRealAppId();
         GetSteamIDResp resp{pWrite};
         if (!resp.ok()) return;
 
@@ -43,7 +43,7 @@ namespace {
         if (req.cbMaxTicket() < 0) return;
 
         AppTicket::AppOwnershipTicket ticket{};
-        AppId_t appId = req.unAppID() == kOnlineFixAppId ? Hooks_Misc::ResolveAppId() : req.unAppID();
+        AppId_t appId = req.unAppID() == kOnlineFixAppId ? Hooks_Misc::GetRealAppId() : req.unAppID();
         
         AppTicket::AppTicketSource ticketSource;
         if (PipeManager::DenuvoAuth::IsAuthorizedPipe(pipe)) {
@@ -82,7 +82,7 @@ namespace {
         RequestEncryptedAppTicketResp resp{pWrite};
         if (!resp.ok()) return;
 
-        AppId_t appId = Hooks_Misc::ResolveAppId();
+        AppId_t appId = Hooks_Misc::GetRealAppId();
         std::vector<uint8_t> ticket = AppTicket::GetEncryptedTicketFromCredentialStore(appId);
         if (ticket.empty()) {
             LOG_IPC_DEBUG("RequestEncryptedAppTicket: AppId={} - no cached eticket, skip", appId);
@@ -98,7 +98,7 @@ namespace {
     // [Post-Handler]: IClientUser::GetEncryptedAppTicket
     void HandlerPost_IClientUser_GetEncryptedAppTicket(CPipeClient* pipe, CUtlBuffer* pRead, CUtlBuffer* pWrite)
     {
-        AppId_t appId = Hooks_Misc::ResolveAppId();
+        AppId_t appId = Hooks_Misc::GetRealAppId();
         std::vector<uint8_t> ticket = AppTicket::GetEncryptedTicketFromCredentialStore(appId);
         if (ticket.empty()) {
             LOG_IPC_DEBUG("GetEncryptedAppTicket: AppId={} - no cached eticket, skip", appId);

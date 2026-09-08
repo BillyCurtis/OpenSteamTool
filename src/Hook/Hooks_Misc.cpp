@@ -139,6 +139,13 @@ namespace Hooks_Misc {
     }
 
     
+    AppId_t GetRealAppId() {
+        if (g_OnlineFixRealAppId) {
+            return g_OnlineFixRealAppId;
+        }
+        return GetAppIDForCurrentPipeWrap();
+    }
+
     AppId_t ResolveAppId() {
         if (g_OnlineFixRealAppId) {
             // Return 480 immediately for P2P cert matching, don't wait for detection
