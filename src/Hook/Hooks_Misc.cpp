@@ -140,11 +140,9 @@ namespace Hooks_Misc {
 
     
     AppId_t ResolveAppId() {
-        if (ShouldReportOnlineFixAppId()) {
-            return kOnlineFixAppId;  // Return 480 for cert matching
-        }
         if (g_OnlineFixRealAppId) {
-            return g_OnlineFixRealAppId;  // Return real ID before P2P starts
+            // Return 480 immediately for P2P cert matching, don't wait for detection
+            return kOnlineFixAppId;
         }
         return GetAppIDForCurrentPipeWrap();
     }
