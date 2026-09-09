@@ -25,25 +25,41 @@ namespace {
     }
 
     // [Post-Handler]: IClientUtils::GetAppID
-    //  SpawnProcess rewrites pGameID to 480 for OnlineFix games,
-    //  so steamclient returns 480.  Restore the real app_id.
-    //  GetAppID reads and updates the response steamclient pre-filled.
+    //  Once P2P is up, return 480 so the socket matches the 480 session cert.
     void HandlerPost_IClientUtils_GetAppID(CPipeClient* pipe, CUtlBuffer* pRead, CUtlBuffer* pWrite)
     {
-        // Once P2P is up, leave 480 so the socket matches the 480 session cert.
-        if (Hooks_Misc::ShouldReportOnlineFixAppId()) return;
-
-        AppId_t realAppId = Hooks_Misc::ResolveAppId();
-        if (!realAppId) return;
-
         GetAppIDResp resp{pWrite};
-        if (!resp.ok()) return;
+        if (!resp.ok()) {
+            LOG_IPC_WARN("GetAppID: resp not ok");
+            return;
+        }
 
-        // Read what steamclient just wrote, decide whether to spoof.
-        const AppId_t current = resp.returnValue();
-        if (current == realAppId) return;
+        AppId_t currentAppId = resp.returnValue();
+        LOG_IPC_DEBUG("GetAppID: current={}, IsOnlineFixActive={}, ShouldReportOnlineFixAppId={}", 
+                      currentAppId, Hooks_Misc::IsOnlineFixActive(), Hooks_Misc::ShouldReportOnlineFixAppId());
+
+        // For onlinefix games, always leave 480
+        if (Hooks_Misc::IsOnlineFixActive()) {
+            if (currentAppId != 480) {
+                LOG_IPC_WARN("GetAppID: onlinefix active but appid={} not 480", currentAppId);
+            }
+            return;
+        }
+
+        // Not an onlinefix game - might need to spoof
+        AppId_t realAppId = Hooks_Misc::GetRealAppId();
+        if (!realAppId) {
+            LOG_IPC_TRACE("GetAppID: realAppId=0, skip spoofing");
+            return;
+        }
+
+        if (currentAppId == realAppId) {
+            LOG_IPC_TRACE("GetAppID: already correct ({})", realAppId);
+            return;
+        }
+
         resp.set_returnValue(realAppId);
-        LOG_IPC_INFO("GetAppID: spoof response {} -> {}", current, realAppId);
+        LOG_IPC_INFO("GetAppID: spoofed {} -> {}", currentAppId, realAppId);
     }
 
     // ════════════════════════════════════════════════════════════════

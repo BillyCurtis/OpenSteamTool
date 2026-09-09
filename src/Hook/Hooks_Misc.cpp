@@ -147,9 +147,10 @@ namespace Hooks_Misc {
     }
 
     AppId_t ResolveAppId() {
+        // Always return the real app ID (for tickets, etc)
+        // The GetAppID handler specifically returns 480 for P2P matching
         if (g_OnlineFixRealAppId) {
-            // Return 480 immediately for P2P cert matching, don't wait for detection
-            return kOnlineFixAppId;
+            return g_OnlineFixRealAppId;
         }
         return GetAppIDForCurrentPipeWrap();
     }
