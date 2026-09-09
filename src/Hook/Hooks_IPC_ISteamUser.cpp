@@ -39,24 +39,34 @@ namespace {
         GetAppOwnershipTicketExtendedDataReq req{pRead};
         if (!req.ok()) return;
 
-        LOG_IPC_DEBUG("IClientUser::GetAppOwnershipTicketExtendedData:{}", req.DebugString());
+        LOG_IPC_DEBUG("IClientUser::GetAppOwnershipTicketExtendedData: req.unAppID()={}", req.unAppID());
         if (req.cbMaxTicket() < 0) return;
 
         AppTicket::AppOwnershipTicket ticket{};
-        AppId_t appId = req.unAppID() == kOnlineFixAppId ? Hooks_Misc::ResolveAppId() : req.unAppID();
+        AppId_t requestAppId = req.unAppID();
+        AppId_t ticketAppId = requestAppId;
+        
+        // For onlinefix games, if game requests 480, we need the REAL app ID ticket
+        if (requestAppId == kOnlineFixAppId && Hooks_Misc::IsOnlineFixActive()) {
+            ticketAppId = Hooks_Misc::ResolveAppId();
+            LOG_IPC_INFO("GetAppOwnershipTicketExtendedData: Converting onlinefix app ID {} -> {} for ticket", requestAppId, ticketAppId);
+        }
         
         AppTicket::AppTicketSource ticketSource;
         if (PipeManager::DenuvoAuth::IsAuthorizedPipe(pipe)) {
             ticketSource = AppTicket::AppTicketSource::CredentialStoreOnly;
         } else {
-            LOG_IPC_DEBUG("IClientUser::GetAppOwnershipTicketExtendedData: AppId={} not in authorization window, only forge available", appId);
+            LOG_IPC_DEBUG("IClientUser::GetAppOwnershipTicketExtendedData: AppId={} not in authorization window, only forge available", ticketAppId);
             ticketSource = AppTicket::AppTicketSource::ForgeOnly;
         }        
-        if (!AppTicket::GetAppOwnershipTicket(appId, ticket, ticketSource)) return;
+        if (!AppTicket::GetAppOwnershipTicket(ticketAppId, ticket, ticketSource)) {
+            LOG_IPC_WARN("GetAppOwnershipTicketExtendedData: Failed to get ticket for app ID {}", ticketAppId);
+            return;
+        }
 
         if (ticket.data.size() > static_cast<size_t>(req.cbMaxTicket())) {
             LOG_IPC_WARN("IClientUser::GetAppOwnershipTicketExtendedData: AppId={} ticket too large ({} bytes) for buffer ({} bytes)",
-                         appId, ticket.data.size(), req.cbMaxTicket());
+                         ticketAppId, ticket.data.size(), req.cbMaxTicket());
             return;
         }
 
@@ -70,8 +80,8 @@ namespace {
         resp.set_piSignature(ticket.signatureOffset);
         resp.set_pcbSignature(ticket.signatureSize);
 
-        LOG_IPC_DEBUG("IClientUser::GetAppOwnershipTicketExtendedData: AppId={} {}", 
-                        appId,resp.DebugString());
+        LOG_IPC_INFO("GetAppOwnershipTicketExtendedData: Generated ticket for AppId={} (requested {})", 
+                        ticketAppId, requestAppId);
     }
 
     // [Post-Handler]: IClientUser::RequestEncryptedAppTicket
