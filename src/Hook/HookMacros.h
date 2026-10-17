@@ -72,6 +72,8 @@ do {                                                              \
     } while (0)
 #define UNINSTALL_HOOK_C(name)        UNINSTALL_HOOK(name)
 #define UNINSTALL_HOOK_U(name)        UNINSTALL_HOOK(name)
+#define INSTALL_HOOK_D(name)            INSTALL_HOOK(client_hModule, name)
+#define UNINSTALL_HOOK_D(name)          UNINSTALL_HOOK(name)
 
 // ── resolve function definition ────────────────────────────────────
 //   RESOLVE_FUNC(CUtlMemoryGrow, void*, CUtlVector<AppId_t>*, int);
