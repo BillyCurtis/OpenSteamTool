@@ -22,9 +22,6 @@ jobs:
       - name: Configure
         run: cmake -S src -B build -G "Ninja Multi-Config" -DOPENSTEAMTOOL_VERSION="${{ github.event.inputs.version }}"
 
-      - name: Build Release
-        run: cmake --build build --config Release
-
       - name: Build Debug
         run: cmake --build build --config Debug
 
@@ -54,9 +51,6 @@ jobs:
           git tag ${{ github.event.inputs.version }}
           git push origin ${{ github.event.inputs.version }}
 
-      - name: Package Release
-        run: 7z a OpenSteamTool-${{ github.event.inputs.version }}-Release.zip ".\build\Release\*" -mx5
-
       - name: Package Debug
         run: 7z a OpenSteamTool-${{ github.event.inputs.version }}-Debug.zip ".\build\Debug\*" -mx5
 
@@ -77,5 +71,4 @@ jobs:
 
             Create a Lua config directory (for example `C:\Program Files (x86)\Steam\config\lua`) and place your Lua scripts there. **NOT** `C:\Program Files (x86)\Steam\config\stplug-in`!
           files: |
-            OpenSteamTool-${{ github.event.inputs.version }}-Release.zip
             OpenSteamTool-${{ github.event.inputs.version }}-Debug.zip
