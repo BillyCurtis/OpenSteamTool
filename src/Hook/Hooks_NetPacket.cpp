@@ -936,6 +936,10 @@ namespace Hooks_NetPacket_RichPresence {
 // ════════════════════════════════════════════════════════════════
 namespace Hooks_NetPacket_OnlineFix {
 
+    // Send the real appid in games_played so playtime is credited to the
+    // real game instead of Spacewar (480). Set to false to revert to 480.
+    constexpr bool kRewritePlaytimeAppId = true;
+
     bool HandleSend(const uint8* pBody, uint32 cbBody,
                     const uint8* pHdr, uint32 cbHdr)
     {
@@ -954,10 +958,20 @@ namespace Hooks_NetPacket_OnlineFix {
             AppId_t appid = static_cast<AppId_t>(game->game_id() & UINT32_MAX);
 
             // SpawnProcess rewrites pGameID to 480, so game_id is already 480.
-            // Fill game_extra_info with the real game name.
             if (appid == kOnlineFixAppId) {
                 AppId_t realAppId = Hooks_Misc::ResolveAppId();
                 if (realAppId && LuaConfig::HasDepot(realAppId)) {
+                    // Playtime is credited from games_played.game_id, so send the
+                    // real app ID here (keeping the upper CGameID bits).
+                    if (kRewritePlaytimeAppId) {
+                        const uint64 old = game->game_id();
+                        game->set_game_id((old & ~uint64(0xFFFFFF)) | realAppId);
+                        patched = true;
+                        LOG_ONLINEFIX_INFO("OnlineFix: games_played game_id 480 -> {} (playtime)",
+                            realAppId);
+                    }
+
+                    // Fill game_extra_info with the real game name.
                     std::string name = Hooks_Misc::GetGameNameByAppID(realAppId);
                     if (!name.empty()) {
                         game->set_game_extra_info(name);
