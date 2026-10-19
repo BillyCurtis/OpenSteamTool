@@ -238,6 +238,15 @@ namespace Hooks_NetPacket_UserStats {
     // jobid_source -> appid mapping (eMsg 151 request -> eMsg 147 response)
     std::unordered_map<uint64, AppId_t> g_JobIdToAppId;
 
+    // OnlineFix games run under the spoofed appid 480 (set at SpawnProcess).
+    // Stats requests built from that id must be sent for the real app, or
+    // Steam returns Spacewar's stats and SetStat writes to 480.
+    AppId_t ResolveStatsAppId(AppId_t reported) {
+        if (reported != kOnlineFixAppId) return reported;
+        AppId_t real = Hooks_Misc::ResolveAppId();
+        return (real && LuaConfig::HasDepot(real)) ? real : reported;
+    }
+
     // ── Send: CPlayer_GetUserStats_Request (eMsg 151) ──────────
     bool HandleSend_GetUserStats(const uint8* pBody, uint32 cbBody,
                                  const uint8* pHdr, uint32 cbHdr)
@@ -255,7 +264,8 @@ namespace Hooks_NetPacket_UserStats {
 
         LOG_ACHIEVEMENT_DEBUG("Player::GetUserStats request: original body:\n{}", req.DebugString());
         
-        AppId_t appId = req.appid();
+        AppId_t appId = ResolveStatsAppId(req.appid());
+        if (appId != req.appid()) req.set_appid(appId);
         bool hasShaSchema = req.has_sha_schema() && !req.sha_schema().empty();
 
         if (hasShaSchema) {
@@ -360,10 +370,14 @@ namespace Hooks_NetPacket_UserStats {
             LOG_ACHIEVEMENT_WARN("ClientGetUserStats request: missing game_id");
             return false;
         }
-        AppId_t appId = static_cast<AppId_t>(req.game_id());
+        AppId_t appId = ResolveStatsAppId(static_cast<AppId_t>(req.game_id()));
         if (!LuaConfig::HasDepot(appId)) {
             LOG_ACHIEVEMENT_WARN("ClientGetUserStats request: appid={} is not in addappid", appId);
             return false;
+        }
+        if (appId != static_cast<AppId_t>(req.game_id())) {
+            req.set_game_id(appId);
+            LOG_ACHIEVEMENT_DEBUG("ClientGetUserStats request: remapped game_id to real appid {}", appId);
         }
         if (req.schema_local_version() != -1) {
             req.set_schema_local_version(-1);
@@ -1220,6 +1234,25 @@ namespace {
             return;
 
         case k_EMsgClientStoreUserStats2: {         // 5466
+            // SetStat/StoreStats: send the store for the real app, not 480.
+            CMsgClientStoreUserStats2 store;
+            if (store.ParseFromArray(pBody, cbBody) && store.has_game_id()) {
+                const AppId_t reported = static_cast<AppId_t>(store.game_id());
+                const AppId_t target = Hooks_NetPacket_UserStats::ResolveStatsAppId(reported);
+                if (target != reported && LuaConfig::HasDepot(target)) {
+                    store.set_game_id(target);
+                    g_cbSendNewBody = static_cast<uint32>(store.ByteSizeLong());
+                    if (g_cbSendNewBody <= kMaxBodySize &&
+                        store.SerializeToArray(g_SendNewBody, kMaxBodySize)) {
+                        g_NeedReplaceSend = true;
+                        LOG_ACHIEVEMENT_DEBUG("ClientStoreUserStats2: remapped game_id {} -> {}",
+                                              reported, target);
+                    } else {
+                        LOG_ACHIEVEMENT_WARN("ClientStoreUserStats2: failed to encode remapped body");
+                    }
+                }
+            }
+
             AppId_t appId = Hooks_NetPacket_RichPresence::g_PlayingAppId;
             if (appId != 0)
                 CloudRedirectHost::NotifyStatsStored(appId);
