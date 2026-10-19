@@ -44,9 +44,6 @@ namespace {
     uint32 g_cbSendNewBody = 0;
     bool   g_NeedReplaceSend = false;
     bool   g_SuppressSend    = false;   // drop the outbound frame entirely (cloud RPC answered locally)
-    uint8  g_SendNewHdr[kMaxHdrSize];   // replacement protobuf header (send path)
-    uint32 g_cbSendNewHdr    = 0;
-    bool   g_NeedReplaceSendHdr = false;
     uint8  g_SendPacketPool[kPacketPoolSize][kMaxPacketSize];
     int    g_SendPacketPoolIdx = 0;
 
@@ -379,7 +376,7 @@ namespace Hooks_NetPacket_UserStats {
             return false;
         }
         if (appId != static_cast<AppId_t>(req.game_id())) {
-            req.set_game_id((req.game_id() & ~uint64(0xFFFFFF)) | appId);
+            req.set_game_id(appId);
             LOG_ACHIEVEMENT_DEBUG("ClientGetUserStats request: remapped game_id to real appid {}", appId);
         }
         if (req.schema_local_version() != -1) {
@@ -939,13 +936,6 @@ namespace Hooks_NetPacket_RichPresence {
 // ════════════════════════════════════════════════════════════════
 namespace Hooks_NetPacket_OnlineFix {
 
-    // Send the real appid in games_played so playtime is credited to the
-    // real game instead of Spacewar (480). Set to false to revert to 480.
-    constexpr bool kRewritePlaytimeAppId = false;
-
-    // Rewrite the header's routing_appid (480 -> real appid) on games_played.
-    constexpr bool kRewritePlaytimeHeader = true;
-
     bool HandleSend(const uint8* pBody, uint32 cbBody,
                     const uint8* pHdr, uint32 cbHdr)
     {
@@ -964,50 +954,21 @@ namespace Hooks_NetPacket_OnlineFix {
             AppId_t appid = static_cast<AppId_t>(game->game_id() & UINT32_MAX);
 
             // SpawnProcess rewrites pGameID to 480, so game_id is already 480.
+            // Steam credits playtime to the game_id in this entry, so move it
+            // to the real appid; this matches the non-onlinefix path, which
+            // reports the real appid directly. Keep the high CGameID bits.
             if (appid == kOnlineFixAppId) {
                 AppId_t realAppId = Hooks_Misc::ResolveAppId();
                 if (realAppId && LuaConfig::HasDepot(realAppId)) {
-                    // Playtime is credited from games_played.game_id, so send the
-                    // real app ID here (keeping the upper CGameID bits).
-                    if (kRewritePlaytimeAppId) {
-                        const uint64 old = game->game_id();
-                        game->set_game_id((old & ~uint64(0xFFFFFF)) | realAppId);
-                        patched = true;
-                        LOG_ONLINEFIX_INFO("OnlineFix: games_played game_id 480 -> {} (playtime)",
-                            realAppId);
-                    }
+                    const uint64 original = game->game_id();
+                    game->set_game_id((original & ~static_cast<uint64>(UINT32_MAX))
+                                      | static_cast<uint64>(realAppId));
+                    patched = true;
+                    LOG_ONLINEFIX_INFO("OnlineFix: GamesPlayed game_id {} -> real appid {}",
+                        original, realAppId);
 
-                    // Fill game_extra_info with the real game name.
                     std::string name = Hooks_Misc::GetGameNameByAppID(realAppId);
-                    if (!name.empty()) {
-                        game->set_game_extra_info(name);
-                        patched = true;
-                        LOG_ONLINEFIX_INFO("OnlineFix: 480 -> name '{}' (real appid {})",
-                            name, realAppId);
-                    }
-                }
-            }
-        }
-
-        // Header routing_appid: the server may attribute the session by this.
-        CMsgProtoBufHeader hdrMsg;
-        if (hdrMsg.ParseFromArray(pHdr, cbHdr)) {
-            LOG_ONLINEFIX_DEBUG("OnlineFix: games_played header routing_appid={} (has={})",
-                                hdrMsg.routing_appid(), hdrMsg.has_routing_appid());
-            if (kRewritePlaytimeHeader && hdrMsg.has_routing_appid()
-                && hdrMsg.routing_appid() == kOnlineFixAppId) {
-                AppId_t realAppId = Hooks_Misc::ResolveAppId();
-                if (realAppId && LuaConfig::HasDepot(realAppId)) {
-                    hdrMsg.set_routing_appid(realAppId);
-                    g_cbSendNewHdr = static_cast<uint32>(hdrMsg.ByteSizeLong());
-                    if (g_cbSendNewHdr <= kMaxHdrSize &&
-                        hdrMsg.SerializeToArray(g_SendNewHdr, kMaxHdrSize)) {
-                        g_NeedReplaceSendHdr = true;
-                        patched = true;
-                        LOG_ONLINEFIX_INFO("OnlineFix: games_played routing_appid 480 -> {}", realAppId);
-                    } else {
-                        LOG_ONLINEFIX_WARN("OnlineFix: failed to encode games_played header");
-                    }
+                    if (!name.empty()) game->set_game_extra_info(name);
                 }
             }
         }
@@ -1245,7 +1206,6 @@ namespace {
     {
         g_NeedReplaceSend = false;
         g_SuppressSend    = false;
-        g_NeedReplaceSendHdr = false;
 
         LOG_NETPACKET_DEBUG("Send eMsg {}({}) (cbBody={}, cbHdr={})",
                         MsgName(eMsg), static_cast<uint32>(eMsg), cbBody, cbHdr);
@@ -1386,9 +1346,7 @@ namespace {
 
             if (g_NeedReplaceSend) {
                 uint32 newSize = 0;
-                const uint8* newHdr = g_NeedReplaceSendHdr ? g_SendNewHdr : pHdr;
-                const uint32 newHdrLen = g_NeedReplaceSendHdr ? g_cbSendNewHdr : cbHdr;
-                uint8* buf = ReplaceSendPacket(pubData, newHdrLen, newHdr,
+                uint8* buf = ReplaceSendPacket(pubData, cbHdr, pHdr,
                                                g_SendNewBody, g_cbSendNewBody, &newSize);
                 result = buf
                     ? oBBuildAndAsyncSendFrame(pObject, eWebSocketOpCode, buf, newSize)
