@@ -376,7 +376,7 @@ namespace Hooks_NetPacket_UserStats {
             return false;
         }
         if (appId != static_cast<AppId_t>(req.game_id())) {
-            req.set_game_id(appId);
+            req.set_game_id((req.game_id() & ~uint64(0xFFFFFF)) | appId);
             LOG_ACHIEVEMENT_DEBUG("ClientGetUserStats request: remapped game_id to real appid {}", appId);
         }
         if (req.schema_local_version() != -1) {
@@ -1240,7 +1240,7 @@ namespace {
                 const AppId_t reported = static_cast<AppId_t>(store.game_id());
                 const AppId_t target = Hooks_NetPacket_UserStats::ResolveStatsAppId(reported);
                 if (target != reported && LuaConfig::HasDepot(target)) {
-                    store.set_game_id(target);
+                    store.set_game_id((store.game_id() & ~uint64(0xFFFFFF)) | target);
                     g_cbSendNewBody = static_cast<uint32>(store.ByteSizeLong());
                     if (g_cbSendNewBody <= kMaxBodySize &&
                         store.SerializeToArray(g_SendNewBody, kMaxBodySize)) {
