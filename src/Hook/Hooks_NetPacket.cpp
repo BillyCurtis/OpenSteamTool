@@ -931,8 +931,9 @@ namespace Hooks_NetPacket_RichPresence {
 //  Outgoing: CMsgClientGamesPlayed (eMsg 742 / 5410)
 //
 //  When a game launched with -onlinefix reports appid 480, replace
-//  game_extra_info with the real game's localized name so friends
-//  see the correct title.
+//  game_id with the real appid so playtime is credited to the real
+//  game, and replace game_extra_info with the real game's localized
+//  name so friends see the correct title.
 // ════════════════════════════════════════════════════════════════
 namespace Hooks_NetPacket_OnlineFix {
 
@@ -954,21 +955,25 @@ namespace Hooks_NetPacket_OnlineFix {
             AppId_t appid = static_cast<AppId_t>(game->game_id() & UINT32_MAX);
 
             // SpawnProcess rewrites pGameID to 480, so game_id is already 480.
-            // Steam credits playtime to the game_id in this entry, so move it
-            // to the real appid; this matches the non-onlinefix path, which
-            // reports the real appid directly. Keep the high CGameID bits.
+            // The server attributes playtime from game_id, so send the real
+            // appid here (as a non-OnlineFix launch does). Keep the upper
+            // 32 bits of game_id untouched.
             if (appid == kOnlineFixAppId) {
                 AppId_t realAppId = Hooks_Misc::ResolveAppId();
                 if (realAppId && LuaConfig::HasDepot(realAppId)) {
-                    const uint64 original = game->game_id();
-                    game->set_game_id((original & ~static_cast<uint64>(UINT32_MAX))
-                                      | static_cast<uint64>(realAppId));
+                    const uint64 upper = game->game_id() & ~static_cast<uint64>(UINT32_MAX);
+                    game->set_game_id(upper | realAppId);
                     patched = true;
-                    LOG_ONLINEFIX_INFO("OnlineFix: GamesPlayed game_id {} -> real appid {}",
-                        original, realAppId);
+                    LOG_ONLINEFIX_INFO("OnlineFix: GamesPlayed game_id 480 -> {}",
+                        realAppId);
 
+                    // Fill game_extra_info with the real game name.
                     std::string name = Hooks_Misc::GetGameNameByAppID(realAppId);
-                    if (!name.empty()) game->set_game_extra_info(name);
+                    if (!name.empty()) {
+                        game->set_game_extra_info(name);
+                        LOG_ONLINEFIX_INFO("OnlineFix: name '{}' (real appid {})",
+                            name, realAppId);
+                    }
                 }
             }
         }
