@@ -1248,25 +1248,6 @@ namespace {
             return;
 
         case k_EMsgClientStoreUserStats2: {         // 5466
-            // SetStat/StoreStats: send the store for the real app, not 480.
-            CMsgClientStoreUserStats2 store;
-            if (store.ParseFromArray(pBody, cbBody) && store.has_game_id()) {
-                const AppId_t reported = static_cast<AppId_t>(store.game_id());
-                const AppId_t target = Hooks_NetPacket_UserStats::ResolveStatsAppId(reported);
-                if (target != reported && LuaConfig::HasDepot(target)) {
-                    store.set_game_id((store.game_id() & ~uint64(0xFFFFFF)) | target);
-                    g_cbSendNewBody = static_cast<uint32>(store.ByteSizeLong());
-                    if (g_cbSendNewBody <= kMaxBodySize &&
-                        store.SerializeToArray(g_SendNewBody, kMaxBodySize)) {
-                        g_NeedReplaceSend = true;
-                        LOG_ACHIEVEMENT_DEBUG("ClientStoreUserStats2: remapped game_id {} -> {}",
-                                              reported, target);
-                    } else {
-                        LOG_ACHIEVEMENT_WARN("ClientStoreUserStats2: failed to encode remapped body");
-                    }
-                }
-            }
-
             AppId_t appId = Hooks_NetPacket_RichPresence::g_PlayingAppId;
             if (appId != 0)
                 CloudRedirectHost::NotifyStatsStored(appId);
