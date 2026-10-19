@@ -44,6 +44,9 @@ namespace {
     uint32 g_cbSendNewBody = 0;
     bool   g_NeedReplaceSend = false;
     bool   g_SuppressSend    = false;   // drop the outbound frame entirely (cloud RPC answered locally)
+    uint8  g_SendNewHdr[kMaxHdrSize];   // replacement protobuf header (send path)
+    uint32 g_cbSendNewHdr    = 0;
+    bool   g_NeedReplaceSendHdr = false;
     uint8  g_SendPacketPool[kPacketPoolSize][kMaxPacketSize];
     int    g_SendPacketPoolIdx = 0;
 
@@ -938,7 +941,10 @@ namespace Hooks_NetPacket_OnlineFix {
 
     // Send the real appid in games_played so playtime is credited to the
     // real game instead of Spacewar (480). Set to false to revert to 480.
-    constexpr bool kRewritePlaytimeAppId = true;
+    constexpr bool kRewritePlaytimeAppId = false;
+
+    // Rewrite the header's routing_appid (480 -> real appid) on games_played.
+    constexpr bool kRewritePlaytimeHeader = true;
 
     bool HandleSend(const uint8* pBody, uint32 cbBody,
                     const uint8* pHdr, uint32 cbHdr)
@@ -978,6 +984,29 @@ namespace Hooks_NetPacket_OnlineFix {
                         patched = true;
                         LOG_ONLINEFIX_INFO("OnlineFix: 480 -> name '{}' (real appid {})",
                             name, realAppId);
+                    }
+                }
+            }
+        }
+
+        // Header routing_appid: the server may attribute the session by this.
+        CMsgProtoBufHeader hdrMsg;
+        if (hdrMsg.ParseFromArray(pHdr, cbHdr)) {
+            LOG_ONLINEFIX_DEBUG("OnlineFix: games_played header routing_appid={} (has={})",
+                                hdrMsg.routing_appid(), hdrMsg.has_routing_appid());
+            if (kRewritePlaytimeHeader && hdrMsg.has_routing_appid()
+                && hdrMsg.routing_appid() == kOnlineFixAppId) {
+                AppId_t realAppId = Hooks_Misc::ResolveAppId();
+                if (realAppId && LuaConfig::HasDepot(realAppId)) {
+                    hdrMsg.set_routing_appid(realAppId);
+                    g_cbSendNewHdr = static_cast<uint32>(hdrMsg.ByteSizeLong());
+                    if (g_cbSendNewHdr <= kMaxHdrSize &&
+                        hdrMsg.SerializeToArray(g_SendNewHdr, kMaxHdrSize)) {
+                        g_NeedReplaceSendHdr = true;
+                        patched = true;
+                        LOG_ONLINEFIX_INFO("OnlineFix: games_played routing_appid 480 -> {}", realAppId);
+                    } else {
+                        LOG_ONLINEFIX_WARN("OnlineFix: failed to encode games_played header");
                     }
                 }
             }
@@ -1216,6 +1245,7 @@ namespace {
     {
         g_NeedReplaceSend = false;
         g_SuppressSend    = false;
+        g_NeedReplaceSendHdr = false;
 
         LOG_NETPACKET_DEBUG("Send eMsg {}({}) (cbBody={}, cbHdr={})",
                         MsgName(eMsg), static_cast<uint32>(eMsg), cbBody, cbHdr);
@@ -1356,7 +1386,9 @@ namespace {
 
             if (g_NeedReplaceSend) {
                 uint32 newSize = 0;
-                uint8* buf = ReplaceSendPacket(pubData, cbHdr, pHdr,
+                const uint8* newHdr = g_NeedReplaceSendHdr ? g_SendNewHdr : pHdr;
+                const uint32 newHdrLen = g_NeedReplaceSendHdr ? g_cbSendNewHdr : cbHdr;
+                uint8* buf = ReplaceSendPacket(pubData, newHdrLen, newHdr,
                                                g_SendNewBody, g_cbSendNewBody, &newSize);
                 result = buf
                     ? oBBuildAndAsyncSendFrame(pObject, eWebSocketOpCode, buf, newSize)
