@@ -473,3 +473,13 @@ enum EDisplayStatus {
     k_EDisplayStatusDownloadFailed = 38;
     k_EDisplayStatusUpdateFailed = 39;
 }
+// ============================================================
+// CMsgClientStoreUserStats2 (eMsg 5466)
+// Only game_id is declared here: OnlineFix rewrites it from the spoofed
+// appid 480 to the real appid. Proto2 preserves undeclared fields on
+// re-serialize, so the remaining stats payload passes through unchanged.
+// Field number 1 is assumed; verify against the real Steam definition.
+// ============================================================
+message CMsgClientStoreUserStats2 {
+	optional fixed64 game_id = 1;
+}
