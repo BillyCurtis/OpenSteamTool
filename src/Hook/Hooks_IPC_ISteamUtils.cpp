@@ -26,13 +26,14 @@ namespace {
 
     // [Post-Handler]: IClientUtils::GetAppID
     //  SpawnProcess rewrites pGameID to 480 for OnlineFix games,
-    //  so steamclient returns 480.  Restore the real app_id.
+    //  so steamclient returns 480.  Restore the real app_id for playtime tracking.
     //  GetAppID reads and updates the response steamclient pre-filled.
     void HandlerPost_IClientUtils_GetAppID(CPipeClient* pipe, CUtlBuffer* pRead, CUtlBuffer* pWrite)
     {
-        // Once P2P is up, leave 480 so the socket matches the 480 session cert.
-        if (Hooks_Misc::ShouldReportOnlineFixAppId()) return;
-
+        // Always restore the real appid for playtime tracking.
+        // Note: P2P socket matching is handled elsewhere (session certs use 480).
+        // Steam's local playtime tracker uses GetAppID to determine where to record time.
+        
         AppId_t realAppId = Hooks_Misc::ResolveAppId();
         if (!realAppId) return;
 
@@ -43,7 +44,7 @@ namespace {
         const AppId_t current = resp.returnValue();
         if (current == realAppId) return;
         resp.set_returnValue(realAppId);
-        LOG_IPC_INFO("GetAppID: spoof response {} -> {}", current, realAppId);
+        LOG_IPC_INFO("GetAppID: spoof response {} -> {} (playtime tracking)", current, realAppId);
     }
 
     // ════════════════════════════════════════════════════════════════
