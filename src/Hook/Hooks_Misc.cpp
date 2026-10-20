@@ -40,23 +40,9 @@ namespace {
             g_NetworkingSocketsActive = false;
             pGameID->SetAppID(kOnlineFixAppId);
             LOG_MISC_INFO("SpawnProcess: appid {} -> {}, cmd=\"{}\"",appId, kOnlineFixAppId, cmdLine);
-        } else if (appId != 0 && appId != kOnlineFixAppId) {
-            // Only treat this as "the OnlineFix session ended" when a
-            // *different real game* is being spawned. SpawnProcess also
-            // fires for helper/overlay/web-helper processes (appid 0, or
-            // sometimes kOnlineFixAppId again) while the game is still
-            // running; those must not wipe the tracked real appid, or
-            // every GamesPlayed resend after the first helper spawn goes
-            // back out with appid 480 and playtime gets misattributed.
-            if (g_OnlineFixRealAppId) {
-                LOG_MISC_INFO("SpawnProcess: new game appid {} launched, clearing stale OnlineFix state (was {})",
-                              appId, g_OnlineFixRealAppId);
-            }
+        } else {
             g_OnlineFixRealAppId = 0;
             g_OnlineFixUserStatsPipe = 0;
-        } else {
-            LOG_MISC_TRACE("SpawnProcess: helper spawn appid={} cmd=\"{}\" -- leaving OnlineFix state untouched (current={})",
-                           appId, cmdLine ? cmdLine : "(null)", g_OnlineFixRealAppId);
         }
     }
 
