@@ -932,25 +932,62 @@ namespace Hooks_NetPacket_OnlineFix {
         }
         LOG_ONLINEFIX_DEBUG("OnlineFix: original body:\n{}", msg.DebugString());
 
+        constexpr uint64 kAppIdMask = 0xFFFFFF;
+        bool patched = false;
+
+        const AppId_t realAppId = Hooks_Misc::IsOnlineFixActive() ? Hooks_Misc::ResolveAppId() : 0;
+        const bool realIsUnlocked = realAppId && LuaConfig::HasDepot(realAppId);
+
+        // While user-stats IPC calls run, GetAppIDForCurrentPipe reports the
+        // real appid (needed for achievements).  steamclient can then publish
+        // the real appid in games_played next to, or instead of, 480.  That
+        // entry skips the 480 -> name patch below, and Rich Presence falls
+        // back to "Spacewar".  Fold it back into the 480 entry so the server
+        // keeps getting the same games_played as before the stats fix.
+        if (realIsUnlocked) {
+            bool has480 = false;
+            for (int i = 0; i < msg.games_played_size(); ++i) {
+                if ((msg.games_played(i).game_id() & kAppIdMask) == kOnlineFixAppId) {
+                    has480 = true;
+                    break;
+                }
+            }
+            for (int i = msg.games_played_size() - 1; i >= 0; --i) {
+                auto* game = msg.mutable_games_played(i);
+                if ((game->game_id() & kAppIdMask) != realAppId) continue;
+                if (has480) {
+                    LOG_ONLINEFIX_INFO("OnlineFix: dropping leaked real appid {} entry (480 already present)", realAppId);
+                    msg.mutable_games_played()->DeleteSubrange(i, 1);
+                } else {
+                    LOG_ONLINEFIX_INFO("OnlineFix: rewriting leaked real appid {} entry -> {}", realAppId, kOnlineFixAppId);
+                    game->set_game_id((game->game_id() & ~kAppIdMask) | kOnlineFixAppId);
+                    has480 = true;
+                }
+                patched = true;
+            }
+        }
+
+        // Track the normalized message so the leaked real appid does not get
+        // picked up as an ordinary unlocked game (that path targets non-OnlineFix games).
         Hooks_NetPacket_RichPresence::TrackSend(msg, pHdr, cbHdr);
 
-        bool patched = false;
         for (int i = 0; i < msg.games_played_size(); ++i) {
             auto* game = msg.mutable_games_played(i);
-            AppId_t appid = static_cast<AppId_t>(game->game_id() & UINT32_MAX);
+            AppId_t appid = static_cast<AppId_t>(game->game_id() & kAppIdMask);
 
             // SpawnProcess rewrites pGameID to 480, so game_id is already 480.
             // Fill game_extra_info with the real game name.
-            if (appid == kOnlineFixAppId) {
-                AppId_t realAppId = Hooks_Misc::ResolveAppId();
-                if (realAppId && LuaConfig::HasDepot(realAppId)) {
-                    std::string name = Hooks_Misc::GetGameNameByAppID(realAppId);
-                    if (!name.empty()) {
+            if (appid == kOnlineFixAppId && realIsUnlocked) {
+                std::string name = Hooks_Misc::GetGameNameByAppID(realAppId);
+                if (!name.empty()) {
+                    if (game->game_extra_info() != name) {
                         game->set_game_extra_info(name);
                         patched = true;
-                        LOG_ONLINEFIX_INFO("OnlineFix: 480 -> name '{}' (real appid {})",
-                            name, realAppId);
                     }
+                    LOG_ONLINEFIX_INFO("OnlineFix: 480 -> name '{}' (real appid {})",
+                        name, realAppId);
+                } else {
+                    LOG_ONLINEFIX_WARN("OnlineFix: no name for real appid {}, friends will see Spacewar", realAppId);
                 }
             }
         }

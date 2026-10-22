@@ -214,7 +214,9 @@ namespace Hooks_Misc {
         }
 
         LOG_MISC_DEBUG("GetGameNameByAppID({}): {}", appId, name);
-        g_GameNameCache[appId] = name;
+        // Don't cache misses: appinfo may not be loaded yet (or the capture
+        // hasn't fired), and a cached "" would keep the name blank forever.
+        if (!name.empty()) g_GameNameCache[appId] = name;
         return name;
     }
 
