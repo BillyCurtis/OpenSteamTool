@@ -1,5 +1,6 @@
 #pragma once
 #include "IPCMessages.gen.h"
+#include "OSTPlatform/include/DynamicLibrary.h"
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -22,8 +23,10 @@ namespace IPCLoader {
         std::vector<Method> methods;
     };
 
-    // Fetch and parse metadata before installing IPC hooks.
-    bool Load(const std::string& steamclientPath);
+    // Load IPC metadata before installing IPC hooks.  Uses the built-in
+    // table, verified once per steamclient build against the loaded module
+    // and cached in <Steam>\\opensteamtool\\ipc\\steamclient\\<sha256>.local.toml.
+    bool Load(OSTPlatform::DynamicLibrary::ModuleHandle module, const std::string& steamclientPath);
 
     // Return nullptr when metadata is unavailable for a method.
     const Method* Find(EIPCInterface interfaceID, uint32_t funcHash);

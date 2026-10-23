@@ -58,15 +58,17 @@ static uint32_t InitThread(OSTPlatform::DynamicLibrary::ModuleHandle selfModule)
     Log::InstallPlatformLogSink();
     SteamDiagnostics::Initialize(SteamclientPath, SteamUIPath);
 
-    // Load pattern files for steamclient64.dll and steamui.dll.
-    // Each call computes the SHA-256 of the DLL on disk, checks the local
-    // cache, and downloads from GitHub if needed.  Both calls are synchronous
-    // but run on this worker thread, never under the loader lock.
+    // Resolve hook addresses for steamui.dll and steamclient64.dll from the
+    // built-in signatures.  Each call hashes the DLL, reuses
+    // <Steam>\opensteamtool\pattern\<component>\<sha256>.local.toml when
+    // present, and otherwise scans the module once and writes that file.
+    // No network access.  Runs on this worker thread, never under the loader lock.
     PatternLoader::Load(ui_hModule, SteamUIPath, "steamui");
     PatternLoader::Load(client_hModule, SteamclientPath, "steamclient");
 
-    // IPC method metadata (funcHash, fencepost, argc, ...)
-    IPCLoader::Load(SteamclientPath);
+    // IPC method metadata (funcHash, fencepost, argc), built in and verified
+    // against this steamclient build.
+    IPCLoader::Load(client_hModule, SteamclientPath);
 
     std::vector<std::string> watchDirs = Config::GetLuaPaths();
     watchDirs.push_back(std::string(LuaDir));
