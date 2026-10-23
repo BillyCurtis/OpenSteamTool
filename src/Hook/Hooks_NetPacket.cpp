@@ -992,6 +992,15 @@ namespace Hooks_NetPacket_OnlineFix {
             }
         }
 
+        // End the OnlineFix session once 480 drops out of GamesPlayed (the
+        // game exited; its playtime has already been saved by then).
+        {
+            bool lists480 = false;
+            for (int i = 0; i < msg.games_played_size(); ++i)
+                if ((msg.games_played(i).game_id() & kAppIdMask) == kOnlineFixAppId) lists480 = true;
+            Hooks_Misc::NotifyOnlineFixGamesPlayed(lists480);
+        }
+
         if (!patched) return false;
 
         g_cbSendNewBody = static_cast<uint32>(msg.ByteSizeLong());

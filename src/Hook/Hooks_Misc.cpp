@@ -22,6 +22,9 @@ namespace {
     thread_local uint32 g_userStatsAppIdOverrideDepth = 0;
     // True once the game starts SteamNetworkingSockets P2P (see GetAppID handler).
     bool      g_NetworkingSocketsActive;
+    // True once GamesPlayed has listed 480 for this -onlinefix launch; the
+    // session ends when a later GamesPlayed no longer does.
+    bool      g_OnlineFixSeenRunning = false;
     std::unordered_map<AppId_t, std::string> g_GameNameCache;
 
 
@@ -41,12 +44,14 @@ namespace {
             g_OnlineFixUserStatsPipe = 0;
             g_OnlineFixGamePipe = 0;
             g_NetworkingSocketsActive = false;
+            g_OnlineFixSeenRunning = false;
             pGameID->SetAppID(kOnlineFixAppId);
             LOG_MISC_INFO("SpawnProcess: appid {} -> {}, cmd=\"{}\"",appId, kOnlineFixAppId, cmdLine);
         } else {
             g_OnlineFixRealAppId = 0;
             g_OnlineFixUserStatsPipe = 0;
             g_OnlineFixGamePipe = 0;
+            g_OnlineFixSeenRunning = false;
         }
     }
 
@@ -303,6 +308,33 @@ namespace Hooks_Misc {
         } else if (g_userStatsAppIdOverrideDepth) {
             --g_userStatsAppIdOverrideDepth;
         }
+    }
+
+    void NotifyOnlineFixGamesPlayed(bool lists480)
+    {
+        if (!g_OnlineFixRealAppId) return;
+        if (lists480) {
+            g_OnlineFixSeenRunning = true;
+            return;
+        }
+        if (!g_OnlineFixSeenRunning) return;   // game not started yet
+
+        // Game exited.  Steam has already saved its playtime / LastPlayed
+        // (that happens before this GamesPlayed is sent), so drop all
+        // OnlineFix state now: otherwise 480 lookups (Spacewar's library page)
+        // keep being redirected, and other processes keep being told they are
+        // the real app, until the next launch.
+        LOG_MISC_INFO("OnlineFix: game {} exited, ending session", g_OnlineFixRealAppId);
+        g_OnlineFixRealAppId      = 0;
+        g_OnlineFixUserStatsPipe  = 0;
+        g_OnlineFixGamePipe       = 0;
+        g_NetworkingSocketsActive = false;
+        g_OnlineFixSeenRunning    = false;
+    }
+
+    bool IsOnlineFixGamePipe(HSteamPipe hSteamPipe)
+    {
+        return IsOnlineFixStatsPipe(hSteamPipe);
     }
 
     void NotifyPipeHandshake(HSteamPipe hSteamPipe, AppId_t envSteamAppId,

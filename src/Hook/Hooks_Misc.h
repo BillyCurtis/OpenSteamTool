@@ -49,6 +49,14 @@ namespace Hooks_Misc {
     // other Steam processes.  False when no -onlinefix game is active.
     bool IsOnlineFixStatsPipe(HSteamPipe hSteamPipe);
 
+    // Same rule, for anything else that should only be spoofed for the game
+    // itself (e.g. IClientUtils::GetAppID).
+    bool IsOnlineFixGamePipe(HSteamPipe hSteamPipe);
+
+    // Called for every outgoing GamesPlayed with whether it lists 480.  Ends
+    // the OnlineFix session once the game has been listed and then isn't.
+    void NotifyOnlineFixGamesPlayed(bool lists480);
+
     // Present real-app stats callbacks through the OnlineFix game identity.
     bool RewriteOnlineFixUserStatsCallback(HSteamPipe hSteamPipe, uint64& gameId);
     bool ShouldRouteOnlineFixUserStatsCallback(AppId_t routeAppId);

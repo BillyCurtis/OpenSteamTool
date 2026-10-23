@@ -33,6 +33,11 @@ namespace {
         // Once P2P is up, leave 480 so the socket matches the 480 session cert.
         if (Hooks_Misc::ShouldReportOnlineFixAppId()) return;
 
+        // Only the -onlinefix game should be told it's the real app.  Without
+        // this the Steam UI / overlay pipes got the real AppId from GetAppID too.
+        if (Hooks_Misc::IsOnlineFixActive() && pipe
+            && !Hooks_Misc::IsOnlineFixGamePipe(pipe->m_hSteamPipe)) return;
+
         AppId_t realAppId = Hooks_Misc::ResolveAppId();
         if (!realAppId) return;
 
