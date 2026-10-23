@@ -93,6 +93,18 @@ namespace BuiltinPatterns {
         { "steamclient", "SpawnProcess",
           "48 89 5C 24 18 4C 89 4C 24 20 48 89 54 24 10 55 56 57 41 54 41 55 41 56 "
           "41 57 48 8D" },
+        // 0x9E25F0  "CUser::GetAppMinutesPlayedData"
+        { "steamclient", "GetAppMinutesPlayedData",
+          "89 54 24 10 48 83 EC 58 48 8B 05 ?? ?? ?? ?? 48 89 7C 24 38" },
+        // 0x9F2D00  writes Apps\\%d\\Playtime* to localconfig
+        { "steamclient", "SaveAppMinutesPlayed",
+          "40 55 57 41 56 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 49 8B E8 44 8B F2" },
+        // 0x9F5B30  "CUser::SetAppLastPlayedTime"
+        { "steamclient", "SetAppLastPlayedTime",
+          "81 FA 01 03 00 00 0F 84 ?? ?? ?? ?? 48 89 5C 24 08 48 89 74 24 10" },
+        // 0x9EEE50  applies Player.ClientGetLastPlayedTimes
+        { "steamclient", "ApplyServerPlaytimes",
+          "48 89 5C 24 20 55 56 41 54 41 55 41 57 48 83 EC 30 45 33 ED" },
         // 0xD2A860  KeyValues::ReadAsBinary (hook currently disabled)
         { "steamclient", "ReadAsBinary",
           "48 8B C4 44 88 48 20 55 48 8D 68 A9 48 81 EC C0 00 00 00 48 89 70 F0" },

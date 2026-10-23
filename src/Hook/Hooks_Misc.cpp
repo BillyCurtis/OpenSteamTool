@@ -96,6 +96,68 @@ namespace {
                                     a8, a9, a10, a11);
     }
 
+    // ── Local playtime (localconfig Playtime / Playtime2wks / LastPlayed) ──
+    // CUser keys its minutes-played bookkeeping by the running CGameID's
+    // appid, which SpawnProcess rewrote to 480, so -onlinefix sessions were
+    // credited to Spacewar.  Remap 480 -> real AppId in the three places that
+    // take that appid:
+    //   GetAppMinutesPlayedData  session start / pause / resume / stop, totals
+    //   SaveAppMinutesPlayed     writes Apps\<id>\Playtime* to localconfig
+    //   SetAppLastPlayedTime     writes Apps\<id>\LastPlayed + UI callback
+    // Server-side playtime is not involved: Steam doesn't count it for
+    // unowned apps, with or without -onlinefix.
+    //
+    // Server-sent playtimes (ApplyServerPlaytimes) are excluded: they carry
+    // their own appid, and remapping them copied Spacewar's totals over.
+    //
+    // Signatures for all four are in Utils/SteamMetadata/BuiltinPatterns.h.
+
+    // >0 while steamclient applies the server's per-app playtime list.  Those
+    // entries are keyed by their own appid, so 480 there is Spacewar's real
+    // server playtime and must not be remapped onto the -onlinefix game.
+    thread_local uint32 g_serverPlaytimeDepth = 0;
+
+    static AppId_t RemapOnlineFixPlaytimeAppId(AppId_t appId) {
+        if (g_serverPlaytimeDepth) return appId;
+        return (appId == kOnlineFixAppId && g_OnlineFixRealAppId) ? g_OnlineFixRealAppId : appId;
+    }
+
+    // CUser::ApplyServerPlaytimes(this, entries[], count) (unnamed in binary,
+    // RVA 0x9EEE50).  Copies Player.ClientGetLastPlayedTimes results into the
+    // records via SetAppLastPlayedTime / GetAppMinutesPlayedData / Save.
+    // Returns the newest last-played time.
+    HOOK_FUNC(ApplyServerPlaytimes, uint32, void* pUser, void** ppEntries, int32 count)
+    {
+        ++g_serverPlaytimeDepth;
+        const uint32 result = oApplyServerPlaytimes(pUser, ppEntries, count);
+        --g_serverPlaytimeDepth;
+        return result;
+    }
+
+    // CUser::GetAppMinutesPlayedData(this, appId, bCreate) -> per-app record
+    HOOK_FUNC(GetAppMinutesPlayedData, void*, void* pUser, AppId_t appId, bool bCreate)
+    {
+        return oGetAppMinutesPlayedData(pUser, RemapOnlineFixPlaytimeAppId(appId), bCreate);
+    }
+
+    // CUser::SaveAppMinutesPlayed(this, appId, pRecord) (unnamed in binary)
+    HOOK_FUNC(SaveAppMinutesPlayed, void, void* pUser, AppId_t appId, void* pRecord)
+    {
+        const AppId_t mapped = RemapOnlineFixPlaytimeAppId(appId);
+        if (mapped != appId)
+            LOG_MISC_INFO("SaveAppMinutesPlayed: appid {} -> {}", appId, mapped);
+        oSaveAppMinutesPlayed(pUser, mapped, pRecord);
+    }
+
+    // CUser::SetAppLastPlayedTime(this, appId, rtLastPlayed)
+    HOOK_FUNC(SetAppLastPlayedTime, void, void* pUser, AppId_t appId, uint32 rtLastPlayed)
+    {
+        const AppId_t mapped = RemapOnlineFixPlaytimeAppId(appId);
+        if (mapped != appId)
+            LOG_MISC_INFO("SetAppLastPlayedTime: appid {} -> {} (rt={})", appId, mapped, rtLastPlayed);
+        oSetAppLastPlayedTime(pUser, mapped, rtLastPlayed);
+    }
+
     // CAppInfoCache::GetOrAddAppData
     // The injected package keeps Lua-provided ids in PackageInfo::AppIdVec.
     // Some of those ids can actually be depot ids, but we cannot trust the
@@ -132,6 +194,10 @@ namespace Hooks_Misc {
         INSTALL_HOOK_D(GetAppIDForCurrentPipe);
         INSTALL_HOOK_C(BuildSpawnEnvBlock);
         INSTALL_HOOK_C(OptedInMask);
+        INSTALL_HOOK_C(GetAppMinutesPlayedData);
+        INSTALL_HOOK_C(SaveAppMinutesPlayed);
+        INSTALL_HOOK_C(SetAppLastPlayedTime);
+        INSTALL_HOOK_C(ApplyServerPlaytimes);
         // INSTALL_HOOK_C(GetOrAddAppData);
         HOOK_END();
     }
@@ -141,6 +207,10 @@ namespace Hooks_Misc {
         UNINSTALL_HOOK(GetAppIDForCurrentPipe);
         UNINSTALL_HOOK(BuildSpawnEnvBlock);
         UNINSTALL_HOOK(OptedInMask);
+        UNINSTALL_HOOK(GetAppMinutesPlayedData);
+        UNINSTALL_HOOK(SaveAppMinutesPlayed);
+        UNINSTALL_HOOK(SetAppLastPlayedTime);
+        UNINSTALL_HOOK(ApplyServerPlaytimes);
         // UNINSTALL_HOOK(GetOrAddAppData);
         UNHOOK_END();
     }
