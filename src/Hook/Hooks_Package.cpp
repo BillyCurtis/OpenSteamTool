@@ -1,4 +1,6 @@
 #include "Hooks_Package.h"
+#include <cstring>
+#include <vector>
 #include "HookMacros.h"
 #include "Hooks_Misc.h"
 #include "Hooks_SteamUI.h"
@@ -123,12 +125,13 @@ namespace {
         return result || publicResultSent;
     }
 
-    static void RewriteOnlineFixStatsCallback(HSteamPipe hSteamPipe, const char* name,
-                                               uint64& gameId) {
-        const uint64 previous = gameId;
-        if (Hooks_Misc::RewriteOnlineFixUserStatsCallback(hSteamPipe, gameId)) {
-            LOG_ACHIEVEMENT_TRACE("SendCallbackToPipe: OnlineFix {} CGameID {:#x} -> {:#x}",
-                                  name, previous, gameId);
+    static const char* OnlineFixStatsCallbackName(int iCallback) {
+        switch (iCallback) {
+        case UserStatsReceived_t::k_iCallback:          return "UserStatsReceived";
+        case UserStatsStored_t::k_iCallback:            return "UserStatsStored";
+        case UserAchievementStored_t::k_iCallback:      return "UserAchievementStored";
+        case UserAchievementIconFetched_t::k_iCallback: return "UserAchievementIconFetched";
+        default:                                        return nullptr;
         }
     }
 
@@ -142,22 +145,24 @@ namespace {
             LOG_PACKAGE_DEBUG("SendCallbackToPipe: AppLicensesChanged m_bReloadAll={} -> true",
                            p->m_bReloadAll);
             p->m_bReloadAll = true;
-        } else if (iCallback == UserStatsReceived_t::k_iCallback
-                   && cubCallbackData >= sizeof(uint64)) {
-            auto* p = static_cast<UserStatsReceived_t*>(pCallbackData);
-            RewriteOnlineFixStatsCallback(hSteamPipe, "UserStatsReceived", p->m_nGameID);
-        } else if (iCallback == UserStatsStored_t::k_iCallback
-                   && cubCallbackData >= sizeof(uint64)) {
-            auto* p = static_cast<UserStatsStored_t*>(pCallbackData);
-            RewriteOnlineFixStatsCallback(hSteamPipe, "UserStatsStored", p->m_nGameID);
-        } else if (iCallback == UserAchievementStored_t::k_iCallback
-                   && cubCallbackData >= sizeof(uint64)) {
-            auto* p = static_cast<UserAchievementStored_t*>(pCallbackData);
-            RewriteOnlineFixStatsCallback(hSteamPipe, "UserAchievementStored", p->m_nGameID);
-        } else if (iCallback == UserAchievementIconFetched_t::k_iCallback
-                   && cubCallbackData >= sizeof(uint64)) {
-            auto* p = static_cast<UserAchievementIconFetched_t*>(pCallbackData);
-            RewriteOnlineFixStatsCallback(hSteamPipe, "UserAchievementIconFetched", p->m_nGameID);
+        } else if (const char* name = OnlineFixStatsCallbackName(iCallback);
+                   name && pCallbackData && cubCallbackData >= static_cast<int>(sizeof(uint64))) {
+            // All four stats callbacks start with uint64 m_nGameID.  steamclient
+            // posts the same pCallbackData to every pipe in a loop, so rewrite
+            // a private copy: patching in place would leak 480 to the pipes
+            // after the game's (overlay, Steam UI) and they'd show Spacewar.
+            uint64 gameId;
+            memcpy(&gameId, pCallbackData, sizeof(gameId));
+            const uint64 previous = gameId;
+            if (Hooks_Misc::RewriteOnlineFixUserStatsCallback(hSteamPipe, gameId)) {
+                std::vector<uint8> copy(static_cast<const uint8*>(pCallbackData),
+                                        static_cast<const uint8*>(pCallbackData) + cubCallbackData);
+                memcpy(copy.data(), &gameId, sizeof(gameId));
+                LOG_ACHIEVEMENT_TRACE("SendCallbackToPipe: OnlineFix {} CGameID {:#x} -> {:#x} (pipe {:#x})",
+                                      name, previous, gameId, hSteamPipe);
+                return oSendCallbackToPipe(pSteamEngine, hSteamPipe, iClientUser,
+                                           iCallback, copy.data(), cubCallbackData);
+            }
         }
 
         return oSendCallbackToPipe(pSteamEngine, hSteamPipe, iClientUser,
