@@ -83,8 +83,12 @@ namespace {
         IPCMessages::IPCInterfaceCall call{request.body()};
         if (!call.ok()) return dispatch;
 
-        // Detect IClientUserStats calls for OnlineFix SetUserStatsContext wrapping
-        dispatch.userStatsCall = (call.interfaceID() == EIPCInterface::IClientUserStats);
+        // Detect IClientUserStats calls for OnlineFix SetUserStatsContext wrapping.
+        // Only the -onlinefix game's own pipe: if the overlay (or any other
+        // Steam process) claimed g_OnlineFixUserStatsPipe, its stats results
+        // would be rewritten to 480 and it would show Spacewar's achievements.
+        dispatch.userStatsCall = (call.interfaceID() == EIPCInterface::IClientUserStats)
+                                 && Hooks_Misc::IsOnlineFixStatsPipe(hSteamPipe);
 
         // Lookup handler by interface ID + method hash
         dispatch.handler = FindHandler(call.interfaceID(), call.funcHash());

@@ -36,6 +36,19 @@ namespace Hooks_Misc {
     // Select real app identity while forwarding OnlineFix user-stats calls.
     void SetUserStatsContext(HSteamPipe hSteamPipe, bool active);
 
+    // Called on every pipe handshake with the process's raw SteamAppId /
+    // SteamGameId env values.  Remembers the -onlinefix game's own pipe: a
+    // non-Steam process launched with SteamAppId / SteamGameId 480.  (Not the
+    // resolved appid: BuildSpawnEnvBlock sets SteamOverlayGameId to the real
+    // app, and ProcessInspector prefers that.)
+    void NotifyPipeHandshake(HSteamPipe hSteamPipe, AppId_t envSteamAppId,
+                             AppId_t envSteamGameId, bool steamClientProcess);
+
+    // True if IClientUserStats calls on this pipe should get the OnlineFix
+    // real-appid treatment: only the game's own pipe, never the overlay or
+    // other Steam processes.  False when no -onlinefix game is active.
+    bool IsOnlineFixStatsPipe(HSteamPipe hSteamPipe);
+
     // Present real-app stats callbacks through the OnlineFix game identity.
     bool RewriteOnlineFixUserStatsCallback(HSteamPipe hSteamPipe, uint64& gameId);
     bool ShouldRouteOnlineFixUserStatsCallback(AppId_t routeAppId);

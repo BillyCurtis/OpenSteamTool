@@ -4,6 +4,7 @@
 #include "Pipe/ProcessInspector.h"
 #include "Pipe/Features/DenuvoAuth/DenuvoAuth.h"
 #include "Pipe/Features/Injection/Injection.h"
+#include "Hook/Hooks_Misc.h"
 #include "Utils/Logging/Log.h"
 #include "Utils/Config/LuaConfig.h"
 
@@ -81,6 +82,11 @@ void OnHandshake(CPipeClient* pipe) {
     LOG_PIPE_INFO("PipeManager: handshake {} process={} appid={} trackedApp={} snapshot={}",
                   pipeKey.DebugString(), processKey.DebugString(), appId,
                   trackedApp, snapshot.DebugString());
+
+    Hooks_Misc::NotifyPipeHandshake(pipe->m_hSteamPipe,
+                                    snapshot.environment.steamAppId.value_or(k_uAppIdInvalid),
+                                    snapshot.environment.steamGameIdAppId.value_or(k_uAppIdInvalid),
+                                    snapshot.steamClientProcess);
 
     // Feature side effects run without holding the registry lock.
     DenuvoAuth::Apply(ctx);

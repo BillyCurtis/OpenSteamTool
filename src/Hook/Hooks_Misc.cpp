@@ -17,6 +17,8 @@ namespace {
     AppId_t   g_OnlineFixRealAppId;
     void*     g_steamEngine = nullptr;
     HSteamPipe g_OnlineFixUserStatsPipe = 0;
+    // The -onlinefix game's own pipe, from its handshake (SteamAppId=480).
+    HSteamPipe g_OnlineFixGamePipe = 0;
     thread_local uint32 g_userStatsAppIdOverrideDepth = 0;
     // True once the game starts SteamNetworkingSockets P2P (see GetAppID handler).
     bool      g_NetworkingSocketsActive;
@@ -37,12 +39,14 @@ namespace {
         {
             g_OnlineFixRealAppId = appId;
             g_OnlineFixUserStatsPipe = 0;
+            g_OnlineFixGamePipe = 0;
             g_NetworkingSocketsActive = false;
             pGameID->SetAppID(kOnlineFixAppId);
             LOG_MISC_INFO("SpawnProcess: appid {} -> {}, cmd=\"{}\"",appId, kOnlineFixAppId, cmdLine);
         } else {
             g_OnlineFixRealAppId = 0;
             g_OnlineFixUserStatsPipe = 0;
+            g_OnlineFixGamePipe = 0;
         }
     }
 
@@ -299,6 +303,27 @@ namespace Hooks_Misc {
         } else if (g_userStatsAppIdOverrideDepth) {
             --g_userStatsAppIdOverrideDepth;
         }
+    }
+
+    void NotifyPipeHandshake(HSteamPipe hSteamPipe, AppId_t envSteamAppId,
+                             AppId_t envSteamGameId, bool steamClientProcess)
+    {
+        if (!g_OnlineFixRealAppId || steamClientProcess) return;
+        if (envSteamAppId != kOnlineFixAppId && envSteamGameId != kOnlineFixAppId) return;
+        g_OnlineFixGamePipe = hSteamPipe;
+        LOG_MISC_INFO("OnlineFix: game pipe {:#x} (real appid {})", hSteamPipe, g_OnlineFixRealAppId);
+    }
+
+    bool IsOnlineFixStatsPipe(HSteamPipe hSteamPipe)
+    {
+        if (!g_OnlineFixRealAppId) return false;
+        // Not identified yet: the game's first IPC message is its handshake,
+        // so until then no pipe can be the game.  (The session only starts at
+        // SpawnProcess, after we're loaded, so the handshake is never missed;
+        // treating every pipe as the game here let the Steam UI's stats calls
+        // be rewritten to 480 during the seconds the game takes to start.)
+        if (!g_OnlineFixGamePipe) return false;
+        return hSteamPipe == g_OnlineFixGamePipe;
     }
 
     bool RewriteOnlineFixUserStatsCallback(HSteamPipe hSteamPipe, uint64& gameId)
